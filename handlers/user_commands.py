@@ -332,11 +332,14 @@ async def set_client_enable_status(user_telegram_id: int, enable: bool):
         print(f"Error toggling status: {e}")
         return False
     
-def format_bytes(size):
+def format_bytes(size) -> str:
+    """Форматирует байты в читаемый вид. Безопасно обрабатывает None и 0."""
+    if not size:
+        return "0.00 B"
     power = 2**10
     n = 0
     power_labels = {0: 'B', 1: 'KB', 2: 'MB', 3: 'GB', 4: 'TB'}
-    while size > power:
+    while size > power and n < 4:
         size /= power
         n += 1
     return f"{size:.2f} {power_labels[n]}"
@@ -1028,17 +1031,27 @@ async def start_crypto_payment(callback: CallbackQuery):
         
     await callback.message.edit_text("⏳ Создаем счет CryptoBot...")
     try:
-        invoice = await cryptopay.create_invoice(asset='USDT', amount=amount, description=f"VPN Plan {plan_id} for {user_id}", payload=f"{user_id}")
+        invoice = await cryptopay.create_invoice(
+            asset='USDT',
+            amount=amount,
+            description=f"VPN Plan {plan_id} for {user_id}",
+            payload=str(user_id)
+        )
         await create_payment_record(invoice.invoice_id, user_id, amount, "USDT", "crypto")
-        
+
         kb = InlineKeyboardMarkup(inline_keyboard=[
             [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url)],
             [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_crypto:{invoice.invoice_id}")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"select_plan:{plan_id}")]
         ])
         await callback.message.edit_text(f"💎 Оплата {amount} USDT", reply_markup=kb)
-    except Exception:
-        await callback.message.edit_text("❌ Ошибка CryptoBot.")
+    except Exception as e:
+        logger.exception(f"CryptoBot create_invoice error for user {user_id}: {e}")
+        await callback.message.edit_text(
+            f"❌ Ошибка CryptoBot.\n"
+            f"<i>Попробуйте позже или напишите в поддержку: {SUPPORT_LINK}</i>",
+            parse_mode="HTML"
+        )
 
 @router.callback_query(F.data.startswith("check_crypto"))
 async def check_crypto_status(callback: CallbackQuery, bot: Bot):
@@ -1072,10 +1085,14 @@ async def check_and_activate(callback: CallbackQuery, bot: Bot, provider: str, p
             if payment.status == "succeeded":
                 is_paid = True
         elif provider == "crypto":
-            invoices = await cryptopay.get_invoices(invoice_ids=[payment_id])
-            if invoices and invoices[0].status == 'paid':
+            # aiocryptopay 0.4.x: get_invoices принимает одиночный ID, не список
+            invoice = await cryptopay.get_invoices(invoice_ids=payment_id)
+            if invoice and invoice.status == 'paid':
                 is_paid = True
-    except Exception: pass
+    except Exception as e:
+        logger.exception(f"Payment check error [{provider}] payment_id={payment_id}: {e}")
+        await callback.answer("❌ Ошибка проверки платежа. Попробуйте позже.", show_alert=True)
+        return
     
     if is_paid:
         await mark_payment_completed(payment_id)
@@ -1163,7 +1180,10 @@ async def user_info_handler(message: Message):
 
     is_active = panel_user.get('status') == 'ACTIVE' and (expiry_ts > current_time or expiry_ts == 0)
     
-    used_traffic = format_bytes(panel_user.get('usedTraffic', 0))
+    # Трафик: безопасная обработка None от API
+    raw_traffic = panel_user.get('usedTraffic') or panel_user.get('usedTrafficBytes') or 0
+    used_traffic = format_bytes(raw_traffic)
+    logger.debug(f"Traffic for user {user_id}: raw={raw_traffic} -> {used_traffic}")
     short_id = panel_user.get('shortUuid')
     sub_link = f"{Subscription_URL}/{short_id}"
 
