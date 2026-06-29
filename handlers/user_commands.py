@@ -1180,11 +1180,20 @@ async def user_info_handler(message: Message):
 
     is_active = panel_user.get('status') == 'ACTIVE' and (expiry_ts > current_time or expiry_ts == 0)
     
-    # Трафик: логируем все поля от API, чтобы точно знать имя поля
-    logger.info(f"[INFO] Remnawave panel_user keys for {user_id}: {list(panel_user.keys())}")
-    logger.info(f"[INFO] usedTraffic={panel_user.get('usedTraffic')} usedTrafficBytes={panel_user.get('usedTrafficBytes')} lifetimeUsedTraffic={panel_user.get('lifetimeUsedTraffic')}")
-    raw_traffic = panel_user.get('usedTraffic') or panel_user.get('usedTrafficBytes') or panel_user.get('lifetimeUsedTraffic') or 0
-    used_traffic = format_bytes(raw_traffic)
+    # Трафик: в Remnawave поле называется 'userTraffic' (объект или число)
+    user_traffic_raw = panel_user.get('userTraffic')
+    logger.info(f"[TRAFFIC] userTraffic raw value for {user_id}: {user_traffic_raw!r}")
+
+    if isinstance(user_traffic_raw, dict):
+        # Объект вида {"upload": 123, "download": 456} или {"bytes": 789}
+        upload = user_traffic_raw.get('upload', 0) or 0
+        download = user_traffic_raw.get('download', 0) or 0
+        total_bytes = user_traffic_raw.get('bytes') or (upload + download)
+        used_traffic = format_bytes(total_bytes)
+    elif isinstance(user_traffic_raw, (int, float)) and user_traffic_raw:
+        used_traffic = format_bytes(user_traffic_raw)
+    else:
+        used_traffic = "0.00 B"
     short_id = panel_user.get('shortUuid')
     sub_link = f"{Subscription_URL}/{short_id}"
 
