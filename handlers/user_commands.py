@@ -1031,12 +1031,12 @@ async def start_crypto_payment(callback: CallbackQuery):
         
     await callback.message.edit_text("⏳ Создаем счет CryptoBot...")
     try:
+        logger.info(f"[CryptoBot] Creating invoice: user={user_id} amount={amount} USDT")
         invoice = await cryptopay.create_invoice(
             asset='USDT',
-            amount=amount,
-            description=f"VPN Plan {plan_id} for {user_id}",
-            payload=str(user_id)
+            amount=amount
         )
+        logger.info(f"[CryptoBot] Invoice created: id={invoice.invoice_id} url={invoice.bot_invoice_url}")
         await create_payment_record(invoice.invoice_id, user_id, amount, "USDT", "crypto")
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
@@ -1180,10 +1180,11 @@ async def user_info_handler(message: Message):
 
     is_active = panel_user.get('status') == 'ACTIVE' and (expiry_ts > current_time or expiry_ts == 0)
     
-    # Трафик: безопасная обработка None от API
-    raw_traffic = panel_user.get('usedTraffic') or panel_user.get('usedTrafficBytes') or 0
+    # Трафик: логируем все поля от API, чтобы точно знать имя поля
+    logger.info(f"[INFO] Remnawave panel_user keys for {user_id}: {list(panel_user.keys())}")
+    logger.info(f"[INFO] usedTraffic={panel_user.get('usedTraffic')} usedTrafficBytes={panel_user.get('usedTrafficBytes')} lifetimeUsedTraffic={panel_user.get('lifetimeUsedTraffic')}")
+    raw_traffic = panel_user.get('usedTraffic') or panel_user.get('usedTrafficBytes') or panel_user.get('lifetimeUsedTraffic') or 0
     used_traffic = format_bytes(raw_traffic)
-    logger.debug(f"Traffic for user {user_id}: raw={raw_traffic} -> {used_traffic}")
     short_id = panel_user.get('shortUuid')
     sub_link = f"{Subscription_URL}/{short_id}"
 
