@@ -1180,16 +1180,10 @@ async def user_info_handler(message: Message):
 
     is_active = panel_user.get('status') == 'ACTIVE' and (expiry_ts > current_time or expiry_ts == 0)
     
-    # Трафик: в Remnawave поле называется 'userTraffic' (объект или число)
+    # Трафик: userTraffic — словарь с ключом 'usedTrafficBytes'
     user_traffic_raw = panel_user.get('userTraffic')
-    logger.info(f"[TRAFFIC] userTraffic raw value for {user_id}: {user_traffic_raw!r}")
-
     if isinstance(user_traffic_raw, dict):
-        # Объект вида {"upload": 123, "download": 456} или {"bytes": 789}
-        upload = user_traffic_raw.get('upload', 0) or 0
-        download = user_traffic_raw.get('download', 0) or 0
-        total_bytes = user_traffic_raw.get('bytes') or (upload + download)
-        used_traffic = format_bytes(total_bytes)
+        used_traffic = format_bytes(user_traffic_raw.get('usedTrafficBytes') or 0)
     elif isinstance(user_traffic_raw, (int, float)) and user_traffic_raw:
         used_traffic = format_bytes(user_traffic_raw)
     else:
