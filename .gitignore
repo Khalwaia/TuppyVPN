@@ -1,0 +1,50 @@
+# Секреты — НИКОГДА не коммитить
+.env
+
+# База данных
+*.db
+*.sqlite3
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+
+# Виртуальное окружение
+venv/
+.venv/
+env/
+
+# Сборка PyInstaller
+build/
+dist/
+*.spec
+*.zip
+
+# Бинарники
+*.exe
+xray.exe
+
+# Логи
+*.log
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# macOS
+.DS_Store
+
+# Временные файлы
+asd/
+
+# Черновики и дубликаты
+handlers/copy.txt
+"handlers/user_commands copy.py"
+handlers/user_commands2.py
+handlers/*.bak

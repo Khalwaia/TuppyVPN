@@ -1,0 +1,28 @@
+services:
+  bot:
+    build: .
+    container_name: tuppyvpn_bot
+    restart: unless-stopped
+
+    # Переменные окружения берём из файла .env
+    env_file:
+      - .env
+
+    volumes:
+      # База данных хранится вне контейнера — данные не потеряются при пересборке
+      - ./data:/app/data
+
+    # Логи: выводим в stdout/stderr (читать через docker logs или loki)
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+    healthcheck:
+      # Проверяем, что процесс python живой
+      test: ["CMD-SHELL", "pgrep -f 'python main.py' || exit 1"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 15s

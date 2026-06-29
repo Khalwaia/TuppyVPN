@@ -1,0 +1,57 @@
+{
+  "log": {
+    "loglevel": "warning"
+  },
+  "inbounds": [
+    {
+      "port": 10808,
+      "listen": "127.0.0.1",
+      "protocol": "http",
+      "settings": {
+        "auth": "noauth",
+        "udp": true
+      },
+      "sniffing": {
+        "enabled": true,
+        "destOverride": [
+          "http",
+          "tls",
+          "quic"
+        ],
+        "routeOnly": false
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "protocol": "vless",
+      "settings": {
+        "vnext": [
+          {
+            "address": "nether1.tuppyhub.store",
+            "port": 443,
+            "users": [
+              {
+                "id": "ffa9f5f9-e22b-4d51-8430-92f2175d6409",
+                "encryption": "none",
+                "flow": "xtls-rprx-vision"
+              }
+            ]
+          }
+        ]
+      },
+      "streamSettings": {
+        "network": "tcp",
+        "security": "reality",
+        "tlsSettings": {},
+        "realitySettings": {
+          "serverName": "nether1.tuppyhub.store",
+          "fingerprint": "chrome",
+          "publicKey": "qJzRmv-aIwOTbwP6zFWpKLu4U51UFYhn-U3Et9V4mwU",
+          "shortId": "6de66651c7a54879"
+        },
+        "wsSettings": {}
+      }
+    }
+  ]
+}
