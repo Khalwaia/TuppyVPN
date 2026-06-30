@@ -1131,7 +1131,7 @@ async def check_and_activate(callback: CallbackQuery, bot: Bot, provider: str, p
                     )
                 except: pass
             
-            sub_link = f"{Subscription_URL}/sub/{sub_id}"
+            sub_link = f"{Subscription_URL}/{sub_id}"
             await bot.send_message(ADMIN_ID, f"💰 ОПЛАТА ({provider}) {paid_amount} \nUser: {user_id} \nДней: {days_to_add} \n Username: {username_user}")
             await callback.message.edit_text(f"🎉 <b>Успешно!</b>\nНачислено: {days_to_add} дней.\n🔗 Ваша ссылка:\n<code>{sub_link}</code>\n\n📋 <b>Инструкция:</b>\n1. Скопируйте полученную ссылку.\n2. Установите Happ или аналог.\n3. Импортируйте ссылку. \n<b>Для автоподключения перейдите по ссылке и следуйте инструкции</b>", parse_mode="HTML")
         else:
