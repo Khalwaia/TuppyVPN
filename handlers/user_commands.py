@@ -1752,8 +1752,7 @@ async def check_hwid_changes(bot: Bot):
                             f"🔑 <b>HWID:</b> <code>{short_hwid}</code>\n"
                             f"➖➖➖➖➖➖➖➖➖➖\n"
                             f"✅ Если это вы — всё в порядке.\n"
-                            f"⚠️ Если <b>не вы</b> — немедленно удалите устройство!\n"
-                            f"🔒 Смените пароль если вы его никому не давали.",
+                            f"⚠️ Если <b>не вы</b> — немедленно удалите устройство!",
                             parse_mode="HTML",
                             reply_markup=kb
                         )
@@ -1768,5 +1767,5 @@ async def check_hwid_changes(bot: Bot):
 
             await asyncio.sleep(0.3)
 
-        logger.info("✅ HWID-проверка завершена. Следующая через 1 час.")
-        await asyncio.sleep(3600)
+        logger.info("✅ HWID-проверка завершена. Следующая через 5 минут.")
+        await asyncio.sleep(300)
