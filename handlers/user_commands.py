@@ -1282,6 +1282,10 @@ async def info_devices_handler(callback: CallbackQuery):
     device_list_text = ""
     kb = []
 
+    # Логируем полную структуру устройств чтобы узнать все доступные поля
+    if devices:
+        logger.info(f"[HWID] Device object structure: {devices[0]}")
+
     for i, device in enumerate(devices):
         hwid_val = device.get('hwid', 'Unknown')
         model = (
@@ -1396,15 +1400,29 @@ async def device_delete_handler(callback: CallbackQuery):
     headers = get_auth_headers()
     base = REMNAWAVE_Url
 
-    # Пробуем несколько возможных эндпоинтов по порядку
+    # Получаем полную структуру устройства для получения device_uuid
+    devices = await get_user_hwid_devices(user_uuid)
+    device_obj = next((d for d in devices if d.get('hwid') == hwid_val), {})
+    device_uuid = device_obj.get('uuid') or device_obj.get('id') or device_obj.get('deviceUuid')
+    logger.info(f"[HWID delete] device_obj={device_obj}")
+
+    # Пробуем все возможные эндпоинты по порядку
     attempts = [
-        # Вариант 1: DELETE /api/hwid/devices/{userUuid}/{hwid}
+        # Самый очевидный по аналогии с delete-all
+        ("POST", f"{base}/api/hwid/devices/delete", {"userUuid": user_uuid, "hwid": hwid_val}),
+        # С полем hwids (array)
+        ("POST", f"{base}/api/hwid/devices/delete", {"userUuid": user_uuid, "hwids": [hwid_val]}),
+        # Через device uuid если он есть
+        *(
+            [
+                ("DELETE", f"{base}/api/hwid/devices/{device_uuid}", None),
+                ("POST", f"{base}/api/hwid/devices/{device_uuid}/delete", {}),
+            ] if device_uuid else []
+        ),
+        # Остальные варианты
         ("DELETE", f"{base}/api/hwid/devices/{user_uuid}/{hwid_val}", None),
-        # Вариант 2: DELETE /api/hwid/devices с телом
         ("DELETE_BODY", f"{base}/api/hwid/devices", {"userUuid": user_uuid, "hwid": hwid_val}),
-        # Вариант 3: POST /api/hwid/user/device/delete
         ("POST", f"{base}/api/hwid/user/device/delete", {"userUuid": user_uuid, "hwid": hwid_val}),
-        # Вариант 4: POST /api/hwid/delete с телом
         ("POST", f"{base}/api/hwid/delete", {"userUuid": user_uuid, "hwid": hwid_val}),
     ]
 
