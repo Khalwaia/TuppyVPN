@@ -552,9 +552,9 @@ async def add_promo_handler(message: Message):
 async def admin_panel(message: Message):
     if message.from_user.id != ADMIN_ID: return
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📢 Рассылка ВСЕМ", callback_data="admin_broadcast:all")],
-        [InlineKeyboardButton(text="💎 Рассылка АКТИВНЫМ", callback_data="admin_broadcast:active")],
-        [InlineKeyboardButton(text="❌ Закрыть", callback_data="close_admin")]
+        [InlineKeyboardButton(text="📢 Рассылка ВСЕМ", callback_data="admin_broadcast:all", style="primary")],
+        [InlineKeyboardButton(text="💎 Рассылка АКТИВНЫМ", callback_data="admin_broadcast:active", style="primary")],
+        [InlineKeyboardButton(text="❌ Закрыть", callback_data="close_admin", style="danger")]
     ])
     await message.answer("👑 <b>Панель управления</b>", reply_markup=kb, parse_mode="HTML")
 
@@ -579,8 +579,8 @@ async def cancel_broadcast(callback: CallbackQuery, state: FSMContext):
 async def process_broadcast_message(message: Message, state: FSMContext):
     await state.update_data(message_id=message.message_id, from_chat_id=message.chat.id)
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Отправить", callback_data="confirm_broadcast")],
-        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_broadcast")]
+        [InlineKeyboardButton(text="✅ Отправить", callback_data="confirm_broadcast", style="success")],
+        [InlineKeyboardButton(text="🔙 Отмена", callback_data="cancel_broadcast", style="danger")]
     ])
     await message.answer("👁️ <b>Предпросмотр:</b>\nОтправить?", reply_markup=kb, parse_mode="HTML")
     await state.set_state(AdminState.confirm_send)
@@ -797,9 +797,9 @@ async def referrals_handler(message: Message, bot: Bot):
         f"🔗 <b>Ваша реферальная ссылка:</b>\n<code>{ref_link}</code>"
     )
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={ref_link}&text=Быстрый VPN! Попробуй.")],
-        [InlineKeyboardButton(text="💳 Вывести средства", callback_data="withdraw_funds")],
-        [InlineKeyboardButton(text="🛒 Купить за баланс", callback_data="buy_with_balance")]
+        [InlineKeyboardButton(text="📤 Поделиться", url=f"https://t.me/share/url?url={ref_link}&text=Быстрый VPN! Попробуй.", style="primary")],
+        [InlineKeyboardButton(text="💳 Вывести средства", callback_data="withdraw_funds", style="primary")],
+        [InlineKeyboardButton(text="🛒 Купить за баланс", callback_data="buy_with_balance", style="success")]
     ])
     
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -850,8 +850,8 @@ async def process_withdraw_details(message: Message, state: FSMContext, bot: Bot
 
     # Отправляем админу
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Выплачено", callback_data=f"adm_wd:app:{req_id}")],
-        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_wd:rej:{req_id}")]
+        [InlineKeyboardButton(text="✅ Выплачено", callback_data=f"adm_wd:app:{req_id}", style="success")],
+        [InlineKeyboardButton(text="❌ Отклонить", callback_data=f"adm_wd:rej:{req_id}", style="danger")]
     ])
     await bot.send_message(
         ADMIN_ID,
@@ -978,9 +978,9 @@ async def process_plan_selection(callback: CallbackQuery):
         duration_text = "90 дней"
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f"💳 Банковская карта ({price_rub}₽)", callback_data=f"method_yookassa:{plan_id}")],
-        [InlineKeyboardButton(text=f"💎 CryptoBot ({price_usdt} USDT)", callback_data=f"method_crypto:{plan_id}")],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="offer_subscription_entry")]
+        [InlineKeyboardButton(text=f"💳 Банковская карта ({price_rub}₽)", callback_data=f"method_yookassa:{plan_id}", style="primary")],
+        [InlineKeyboardButton(text=f"💎 CryptoBot ({price_usdt} USDT)", callback_data=f"method_crypto:{plan_id}", style="primary")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="offer_subscription_entry", style="danger")]
     ])
     
     await callback.message.edit_text(
@@ -1035,8 +1035,8 @@ async def start_yookassa_payment(callback: CallbackQuery):
         await create_payment_record(payment.id, user_id, amount, "RUB", "yookassa")
         
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"↗️ Оплатить {amount}₽", url=payment.confirmation.confirmation_url)],
-            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_yookassa:{payment.id}")],
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount}₽", url=payment.confirmation.confirmation_url, style="success")],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_yookassa:{payment.id}", style="primary")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"select_plan:{plan_id}")]
         ])
         await callback.message.edit_text(f"💳 Ссылка на оплату сформирована.", reply_markup=kb)
@@ -1070,8 +1070,8 @@ async def start_crypto_payment(callback: CallbackQuery):
         await create_payment_record(invoice.invoice_id, user_id, amount, "USDT", "crypto")
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url)],
-            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_crypto:{invoice.invoice_id}")],
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url, style="success")],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_crypto:{invoice.invoice_id}", style="primary")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data=f"select_plan:{plan_id}")]
         ])
         await callback.message.edit_text(f"💎 Оплата {amount} USDT", reply_markup=kb)
@@ -1235,10 +1235,10 @@ async def user_info_handler(message: Message):
     )
 
     kb = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="⚡️ Автоподключение", web_app=WebAppInfo(url=sub_link))],
+        [InlineKeyboardButton(text="⚡️ Автоподключение", web_app=WebAppInfo(url=sub_link), style="primary")],
         [InlineKeyboardButton(text="🔗 Ссылка", callback_data="info_get_link"),
          InlineKeyboardButton(text="📱 Устройства", callback_data="info_devices")],
-        [InlineKeyboardButton(text="💳 Продлить", callback_data="extend_sub_callback")]
+        [InlineKeyboardButton(text="💳 Продлить", callback_data="extend_sub_callback", style="success")]
     ])
 
     await message.answer(text, reply_markup=kb, parse_mode="HTML")
@@ -1367,10 +1367,11 @@ async def info_devices_handler(callback: CallbackQuery):
     )
 
     if active_count > 0:
-        kb.append([InlineKeyboardButton(text="🗑 Сбросить все", callback_data="device_reset_all")])
+        kb.append([InlineKeyboardButton(text="🗑 Сбросить все", callback_data="device_reset_all", style="danger")])
     kb.append([InlineKeyboardButton(
         text=f"➕ Купить слот (+1 устройство) — {PRICE_HWID_SLOT_RUB:.0f}₽",
-        callback_data="hwid_buy_slot"
+        callback_data="hwid_buy_slot",
+        style="success"
     )])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_info")])
 
@@ -1431,7 +1432,8 @@ async def device_info_handler(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="🗑 Удалить это устройство",
-            callback_data=f"device_delete:{hwid_val}"
+            callback_data=f"device_delete:{hwid_val}",
+            style="danger"
         )],
         [InlineKeyboardButton(text="🔙 Назад к устройствам", callback_data="info_devices")]
     ])
@@ -1578,13 +1580,15 @@ async def hwid_buy_slot_handler(callback: CallbackQuery):
     kb = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f"💳 Банковская карта ({PRICE_HWID_SLOT_RUB:.0f}₽)",
-            callback_data="hwid_slot_yookassa"
+            callback_data="hwid_slot_yookassa",
+            style="primary"
         )],
         [InlineKeyboardButton(
             text=f"💸 CryptoBot ({PRICE_HWID_SLOT_USDT} USDT)",
-            callback_data="hwid_slot_crypto"
+            callback_data="hwid_slot_crypto",
+            style="primary"
         )],
-        [InlineKeyboardButton(text="🔙 Назад", callback_data="info_devices")],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="info_devices", style="danger")],
     ])
 
     await callback.message.edit_text(
@@ -1623,8 +1627,8 @@ async def hwid_slot_yookassa_handler(callback: CallbackQuery):
         await create_payment_record(payment.id, user_id, amount, "RUB", "hwid_slot_yookassa")
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"↗️ Оплатить {amount:.0f}₽", url=payment.confirmation.confirmation_url)],
-            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_yookassa:{payment.id}")],
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount:.0f}₽", url=payment.confirmation.confirmation_url, style="success")],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_yookassa:{payment.id}", style="primary")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="hwid_buy_slot")],
         ])
         await callback.message.edit_text(
@@ -1651,8 +1655,8 @@ async def hwid_slot_crypto_handler(callback: CallbackQuery):
         await create_payment_record(invoice.invoice_id, user_id, amount, "USDT", "hwid_slot_crypto")
 
         kb = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url)],
-            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_crypto:{invoice.invoice_id}")],
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url, style="success")],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_crypto:{invoice.invoice_id}", style="primary")],
             [InlineKeyboardButton(text="🔙 Назад", callback_data="hwid_buy_slot")],
         ])
         await callback.message.edit_text(
