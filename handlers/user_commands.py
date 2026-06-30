@@ -1394,25 +1394,62 @@ async def device_delete_handler(callback: CallbackQuery):
 
     user_uuid = client['uuid']
     headers = get_auth_headers()
-    url = f"{REMNAWAVE_Url}/api/hwid/devices/delete-one"
-    payload = {"userUuid": user_uuid, "hwid": hwid_val}
+    base = REMNAWAVE_Url
+
+    # Пробуем несколько возможных эндпоинтов по порядку
+    attempts = [
+        # Вариант 1: DELETE /api/hwid/devices/{userUuid}/{hwid}
+        ("DELETE", f"{base}/api/hwid/devices/{user_uuid}/{hwid_val}", None),
+        # Вариант 2: DELETE /api/hwid/devices с телом
+        ("DELETE_BODY", f"{base}/api/hwid/devices", {"userUuid": user_uuid, "hwid": hwid_val}),
+        # Вариант 3: POST /api/hwid/user/device/delete
+        ("POST", f"{base}/api/hwid/user/device/delete", {"userUuid": user_uuid, "hwid": hwid_val}),
+        # Вариант 4: POST /api/hwid/delete с телом
+        ("POST", f"{base}/api/hwid/delete", {"userUuid": user_uuid, "hwid": hwid_val}),
+    ]
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=headers) as resp:
-                if resp.status in [200, 201, 204]:
-                    logger.info(f"[HWID] Deleted device hwid={hwid_val[:8]}... for user {user_id}")
-                    await callback.answer("✅ Устройство удалено!", show_alert=True)
-                    await info_devices_handler(callback)
-                else:
-                    error_data = await resp.text()
-                    logger.warning(f"[HWID] Delete failed {resp.status}: {error_data}")
-                    await callback.answer(
-                        f"❌ Не удалось удалить (код {resp.status})", show_alert=True
-                    )
+            for method, url, body in attempts:
+                try:
+                    if method == "DELETE":
+                        resp_ctx = session.delete(url, headers=headers)
+                    elif method == "DELETE_BODY":
+                        resp_ctx = session.delete(url, json=body, headers=headers)
+                    else:  # POST
+                        resp_ctx = session.post(url, json=body, headers=headers)
+
+                    async with resp_ctx as resp:
+                        status = resp.status
+                        text = await resp.text()
+                        logger.info(f"[HWID delete] {method} {url} -> {status}: {text[:200]}")
+
+                        if status in [200, 201, 204]:
+                            logger.info(f"[HWID] Deleted device hwid={hwid_val[:8]}... for user {user_id} via {url}")
+                            await callback.answer("✅ Устройство удалено!", show_alert=True)
+                            return await info_devices_handler(callback)
+
+                        # 404 = эндпоинт не существует, пробуем следующий
+                        if status == 404:
+                            continue
+                        # Другая ошибка — сообщаем пользователю
+                        await callback.answer(f"❌ Не удалось удалить (код {status})", show_alert=True)
+                        return
+                except Exception as req_e:
+                    logger.warning(f"[HWID delete] Attempt {method} {url} failed: {req_e}")
+                    continue
+
+            # Все варианты провалились
+            logger.error(f"[HWID delete] All endpoints returned 404 for hwid={hwid_val[:8]}...")
+            await callback.answer(
+                "❌ API удаления устройства не найден.\n"
+                "Проверьте логи (docker compose logs bot) и сообщите разработчику.",
+                show_alert=True
+            )
     except Exception as e:
         logger.exception(f"[HWID] Exception on delete device for user {user_id}: {e}")
         await callback.answer("❌ Техническая ошибка при удалении", show_alert=True)
+
 
 
 @router.callback_query(F.data == "device_reset_all")
