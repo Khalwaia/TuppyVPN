@@ -5,7 +5,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 
 from handlers import user_commands
-from handlers.user_commands import init_db, periodic_subscription_check
+from handlers.user_commands import init_db, periodic_subscription_check, check_hwid_changes
 from config_reader import config
 
 # Настройка логирования
@@ -35,6 +35,10 @@ async def main():
     # FIX: запускаем фоновую проверку подписок на канал
     asyncio.create_task(periodic_subscription_check(bot))
     logger.info("Фоновая задача проверки подписок запущена.")
+
+    # Мониторинг новых HWID-устройств
+    asyncio.create_task(check_hwid_changes(bot))
+    logger.info("Фоновая задача мониторинга HWID запущена.")
 
     await dp.start_polling(bot)
 

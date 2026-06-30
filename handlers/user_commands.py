@@ -124,6 +124,16 @@ async def init_db():
         except: pass
         try: await db.execute("ALTER TABLE users ADD COLUMN balance REAL DEFAULT 0.0")
         except: pass
+        # Таблица снимков HWID для отслеживания новых устройств
+        await db.execute("""
+            CREATE TABLE IF NOT EXISTS user_hwid_snapshots (
+                user_id   INTEGER NOT NULL,
+                hwid      TEXT    NOT NULL,
+                device_model TEXT,
+                first_seen INTEGER NOT NULL,
+                PRIMARY KEY (user_id, hwid)
+            )
+        """)
         await db.commit()
 
 async def get_user(user_id):
@@ -182,6 +192,24 @@ async def get_referral_count(user_id):
 async def deactivate_user_in_db(user_id):
     async with aiosqlite.connect(DB_NAME) as db:
         await db.execute("UPDATE users SET active = 0 WHERE id = ?", (user_id,))
+        await db.commit()
+
+async def get_hwid_snapshot(user_id: int) -> set:
+    """Returns set of known HWIDs for the user from DB."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        async with db.execute(
+            "SELECT hwid FROM user_hwid_snapshots WHERE user_id = ?", (user_id,)
+        ) as cursor:
+            rows = await cursor.fetchall()
+            return {row[0] for row in rows}
+
+async def save_new_hwid(user_id: int, hwid: str, device_model: str):
+    """Saves a newly discovered HWID to the snapshot table."""
+    async with aiosqlite.connect(DB_NAME) as db:
+        await db.execute(
+            "INSERT OR IGNORE INTO user_hwid_snapshots (user_id, hwid, device_model, first_seen) VALUES (?, ?, ?, ?)",
+            (user_id, hwid, device_model, int(time.time()))
+        )
         await db.commit()
 
 async def get_users_for_broadcast(target_type: str):
@@ -1637,16 +1665,16 @@ async def cancel_proc(cb: CallbackQuery):
 
 async def periodic_subscription_check(bot: Bot):
     while True:
-        print("🔄 Запуск плановой проверки подписок на канал...")
+        logger.info("🔄 Плановая проверка подписок на канал...")
         active_users = await get_all_active_users()
-        
+
         for user in active_users:
             user_id = user['id']
-            
+
             is_subscribed = await check_subscription(bot, user_id)
-            
+
             if not is_subscribed:
-                print(f"❌ Пользователь {user_id} отписался. Отключаем VPN.")
+                logger.info(f"❌ Пользователь {user_id} отписался. Отключаем VPN.")
                 await set_client_enable_status(user_id, enable=False)
                 await deactivate_user_in_db(user_id)
                 try:
@@ -1658,8 +1686,87 @@ async def periodic_subscription_check(bot: Bot):
                         parse_mode="HTML"
                     )
                 except Exception: pass
-            
-            await asyncio.sleep(0.5) 
 
-        print("✅ Проверка завершена. Следующая через 12 часов.")
+            await asyncio.sleep(0.5)
+
+        logger.info("✅ Проверка канала завершена. Следующая через 12 часов.")
         await asyncio.sleep(12 * 3600)
+
+
+async def check_hwid_changes(bot: Bot):
+    """Периодическая задача: отслеживает новые HWID у активных пользователей и шлет уведомления."""
+    # Первый запуск откладываем на пару минут чтобы бот успел стартоваться
+    await asyncio.sleep(60)
+
+    while True:
+        logger.info("🔐 Проверка новых HWID устройств...")
+        active_users = await get_all_active_users()
+
+        for user in active_users:
+            user_id = user['id']
+            try:
+                client = await get_client_by_tgid(user_id)
+                if not client:
+                    continue
+
+                user_uuid = client.get('uuid')
+                if not user_uuid:
+                    continue
+
+                # Текущие устройства из API
+                devices = await get_user_hwid_devices(user_uuid)
+                current_hwids = {d.get('hwid') for d in devices if d.get('hwid')}
+
+                # Известные HWID из БД
+                known_hwids = await get_hwid_snapshot(user_id)
+
+                # Новые HWID = те, что еще не в БД
+                new_hwids = current_hwids - known_hwids
+
+                for hwid in new_hwids:
+                    # Находим объект устройства для дополнительной инфо
+                    dev_obj = next((d for d in devices if d.get('hwid') == hwid), {})
+                    model = (
+                        dev_obj.get('deviceModel')
+                        or dev_obj.get('platform')
+                        or dev_obj.get('userAgent', '')
+                        or 'Неизвестное устройство'
+                    )
+                    short_hwid = f"{hwid[:8]}…{hwid[-4:]}" if len(hwid) > 12 else hwid
+
+                    logger.info(f"[HWID] New device detected for user {user_id}: {hwid[:8]}... ({model})")
+
+                    # Уведомляем пользователя
+                    try:
+                        kb = InlineKeyboardMarkup(inline_keyboard=[
+                            [InlineKeyboardButton(
+                                text="📱 Устройства",
+                                callback_data="info_devices"
+                            )]
+                        ])
+                        await bot.send_message(
+                            user_id,
+                            f"🔔 <b>Новое устройство подключилось к вашему VPN!</b>\n"
+                            f"➖➖➖➖➖➖➖➖➖➖\n"
+                            f"🖥 <b>Устройство:</b> {model}\n"
+                            f"🔑 <b>HWID:</b> <code>{short_hwid}</code>\n"
+                            f"➖➖➖➖➖➖➖➖➖➖\n"
+                            f"✅ Если это вы — всё в порядке.\n"
+                            f"⚠️ Если <b>не вы</b> — немедленно удалите устройство!\n"
+                            f"🔒 Смените пароль если вы его никому не давали.",
+                            parse_mode="HTML",
+                            reply_markup=kb
+                        )
+                    except Exception as send_err:
+                        logger.warning(f"[HWID notify] Can't send to {user_id}: {send_err}")
+
+                    # Сохраняем новый HWID в БД
+                    await save_new_hwid(user_id, hwid, model)
+
+            except Exception as e:
+                logger.exception(f"[HWID check] Error for user {user_id}: {e}")
+
+            await asyncio.sleep(0.3)
+
+        logger.info("✅ HWID-проверка завершена. Следующая через 1 час.")
+        await asyncio.sleep(3600)
