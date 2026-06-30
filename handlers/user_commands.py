@@ -46,6 +46,8 @@ PRICE_1_MONTH_RUB = 79.00
 PRICE_3_MONTHS_RUB = 169.00
 PRICE_1_MONTH_USDT = 1
 PRICE_3_MONTHS_USDT = 2.5
+PRICE_HWID_SLOT_RUB = 15.00      # Цена доп. слота HWID в рублях
+PRICE_HWID_SLOT_USDT = 0.20     # Цена в USDT
 
 Configuration.account_id = YOOKASSA_SHOP_ID
 Configuration.secret_key = YOOKASSA_SECRET_KEY
@@ -1293,6 +1295,24 @@ async def get_full_user_info(user_uuid: str):
         print(f"❌ Ошибка get_full_user_info: {e}")
     return None
 
+async def increase_hwid_limit(user_uuid: str, new_limit: int) -> bool:
+    """Увеличивает hwidDeviceLimit пользователя через PATCH /api/users."""
+    headers = get_auth_headers()
+    url = f"{REMNAWAVE_Url}/api/users"
+    payload = {"uuid": user_uuid, "hwidDeviceLimit": new_limit}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(url, json=payload, headers=headers) as resp:
+                if resp.status == 200:
+                    logger.info(f"[HWID limit] Set limit={new_limit} for uuid={user_uuid[:8]}...")
+                    return True
+                else:
+                    text = await resp.text()
+                    logger.warning(f"[HWID limit] PATCH failed {resp.status}: {text}")
+    except Exception as e:
+        logger.exception(f"[HWID limit] Exception: {e}")
+    return False
+
 @router.callback_query(F.data == "info_devices")
 async def info_devices_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
@@ -1348,6 +1368,10 @@ async def info_devices_handler(callback: CallbackQuery):
 
     if active_count > 0:
         kb.append([InlineKeyboardButton(text="🗑 Сбросить все", callback_data="device_reset_all")])
+    kb.append([InlineKeyboardButton(
+        text=f"➕ Купить слот (+1 устройство) — {PRICE_HWID_SLOT_RUB:.0f}₽",
+        callback_data="hwid_buy_slot"
+    )])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_info")])
 
     await callback.message.edit_text(
@@ -1501,15 +1525,15 @@ async def device_delete_handler(callback: CallbackQuery):
 @router.callback_query(F.data == "device_reset_all")
 async def device_reset_all_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
-    
+
     # 1. Получаем UUID пользователя
     client = await get_client_by_tgid(user_id)
     if not client or 'uuid' not in client:
         return await callback.answer("❌ Ошибка: пользователь не найден", show_alert=True)
-    
+
     user_uuid = client['uuid']
     headers = get_auth_headers()
-    
+
     # 2. Правильный путь для удаления всех устройств
     url = f"{REMNAWAVE_Url}/api/hwid/devices/delete-all"
 
@@ -1524,17 +1548,198 @@ async def device_reset_all_handler(callback: CallbackQuery):
                 if resp.status in [200, 201, 204]:
                     await callback.answer("✅ Устройства успешно сброшены!", show_alert=True)
                     print(f"🧹 HWID сброшены для пользователя {user_id}")
-                    
+
                     # Мгновенно обновляем меню, чтобы слоты стали "Свободными"
                     await info_devices_handler(callback)
                 else:
                     error_data = await resp.text()
                     print(f"❌ Ошибка сброса: {resp.status} - {error_data}")
                     await callback.answer(f"❌ Не удалось сбросить (Код: {resp.status})", show_alert=True)
-                    
+
     except Exception as e:
         print(f"❌ Исключение при сбросе устройств: {e}")
         await callback.answer("❌ Техническая ошибка при сбросе", show_alert=True)
+
+
+# ─────────────────────────────────────────────────────────────
+#  ПОКУПКА ДОП. СЛОТА HWID
+# ─────────────────────────────────────────────────────────────
+
+@router.callback_query(F.data == "hwid_buy_slot")
+async def hwid_buy_slot_handler(callback: CallbackQuery):
+    """Отображает выбор способа оплаты доп. слота HWID."""
+    user_id = callback.from_user.id
+    client = await get_client_by_tgid(user_id)
+    if not client:
+        return await callback.answer("❌ Подписка не найдена", show_alert=True)
+
+    current_limit = client.get('hwidDeviceLimit', 5)
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f"💳 Банковская карта ({PRICE_HWID_SLOT_RUB:.0f}₽)",
+            callback_data="hwid_slot_yookassa"
+        )],
+        [InlineKeyboardButton(
+            text=f"💸 CryptoBot ({PRICE_HWID_SLOT_USDT} USDT)",
+            callback_data="hwid_slot_crypto"
+        )],
+        [InlineKeyboardButton(text="🔙 Назад", callback_data="info_devices")],
+    ])
+
+    await callback.message.edit_text(
+        f"➕ <b>Покупка дополнительного слота HWID</b>\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n"
+        f"🔐 <b>Текущий лимит:</b> {current_limit} устройств\n"
+        f"🔜 <b>После оплаты:</b> {current_limit + 1} устройства\n"
+        f"💰 <b>Стоимость:</b> {PRICE_HWID_SLOT_RUB:.0f}₽ / {PRICE_HWID_SLOT_USDT} USDT\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n"
+        f"Выберите способ оплаты:",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data == "hwid_slot_yookassa")
+async def hwid_slot_yookassa_handler(callback: CallbackQuery):
+    """Создаёт счёт ЮКасса для покупки доп. слота HWID."""
+    user_id = callback.from_user.id
+    amount = PRICE_HWID_SLOT_RUB
+    desc = f"HWID slot +1: {user_id}"
+
+    await callback.message.edit_text("⏳ Создаем счёт ЮКасса...")
+    try:
+        def create_payment_sync():
+            idempotence_key = str(uuid.uuid4())
+            return Payment.create({
+                "amount": {"value": f"{amount:.2f}", "currency": "RUB"},
+                "confirmation": {"type": "redirect", "return_url": "https://t.me/TuppyVpnAdmin_robot"},
+                "capture": True,
+                "description": desc,
+                "metadata": {"user_id": user_id, "type": "hwid_slot"}
+            }, idempotence_key)
+
+        payment = await asyncio.to_thread(create_payment_sync)
+        await create_payment_record(payment.id, user_id, amount, "RUB", "hwid_slot_yookassa")
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount:.0f}₽", url=payment.confirmation.confirmation_url)],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_yookassa:{payment.id}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="hwid_buy_slot")],
+        ])
+        await callback.message.edit_text(
+            f"💳 <b>Оплата +1 слот HWID</b>\n"
+            f"Счёт на сумму <b>{amount:.0f}₽</b> сформирован.\n"
+            f"После оплаты нажмите «Проверить оплату».",
+            reply_markup=kb, parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.exception(f"HWID slot YooKassa error for {user_id}: {e}")
+        await callback.message.edit_text("❌ Ошибка платёжной системы. Попробуйте позже.")
+
+
+@router.callback_query(F.data == "hwid_slot_crypto")
+async def hwid_slot_crypto_handler(callback: CallbackQuery):
+    """Создаёт инвойс CryptoBot для покупки доп. слота HWID."""
+    user_id = callback.from_user.id
+    amount = PRICE_HWID_SLOT_USDT
+
+    await callback.message.edit_text("⏳ Создаем счёт CryptoBot...")
+    try:
+        logger.info(f"[CryptoBot][HWID slot] Creating invoice: user={user_id} amount={amount} USDT")
+        invoice = await cryptopay.create_invoice(asset='USDT', amount=amount)
+        await create_payment_record(invoice.invoice_id, user_id, amount, "USDT", "hwid_slot_crypto")
+
+        kb = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=f"↗️ Оплатить {amount} USDT", url=invoice.bot_invoice_url)],
+            [InlineKeyboardButton(text="🔄 Проверить оплату", callback_data=f"check_hwid_slot_crypto:{invoice.invoice_id}")],
+            [InlineKeyboardButton(text="🔙 Назад", callback_data="hwid_buy_slot")],
+        ])
+        await callback.message.edit_text(
+            f"💸 <b>Оплата +1 слот HWID</b>\n"
+            f"Счёт на сумму <b>{amount} USDT</b> сформирован.\n"
+            f"После оплаты нажмите «Проверить оплату».",
+            reply_markup=kb, parse_mode="HTML"
+        )
+    except Exception as e:
+        logger.exception(f"CryptoBot HWID slot error for {user_id}: {e}")
+        await callback.message.edit_text(
+            f"❌ Ошибка CryptoBot.\n<i>Попробуйте позже или напишите в поддержку: {SUPPORT_LINK}</i>",
+            parse_mode="HTML"
+        )
+
+
+async def activate_hwid_slot(callback: CallbackQuery, bot: Bot, provider: str, payment_id):
+    """Проверяет оплату и выдаёт доп. слот HWID."""
+    user_id = callback.from_user.id
+
+    payment_record = await get_payment_record(payment_id)
+    if not payment_record:
+        return await callback.answer("❌ Платёж не найден", show_alert=True)
+    if payment_record[5] == 'completed':
+        return await callback.answer("✅ Уже активировано!", show_alert=True)
+
+    is_paid = False
+    try:
+        if provider == "hwid_slot_yookassa":
+            payment = await asyncio.to_thread(lambda: Payment.find_one(payment_id))
+            if payment.status == "succeeded":
+                is_paid = True
+        elif provider == "hwid_slot_crypto":
+            invoice = await cryptopay.get_invoices(invoice_ids=payment_id)
+            if invoice and invoice.status == 'paid':
+                is_paid = True
+    except Exception as e:
+        logger.exception(f"[HWID slot] Payment check error [{provider}]: {e}")
+        return await callback.answer("❌ Ошибка проверки. Попробуйте позже.", show_alert=True)
+
+    if not is_paid:
+        return await callback.answer("❌ Оплата ещё не поступила. Попробуйте через несколько секунд.", show_alert=True)
+
+    # Получаем текущий лимит
+    client = await get_client_by_tgid(user_id)
+    if not client:
+        return await callback.answer("❌ Подписка не найдена", show_alert=True)
+
+    user_uuid = client['uuid']
+    current_limit = client.get('hwidDeviceLimit', 5)
+    new_limit = current_limit + 1
+
+    ok = await increase_hwid_limit(user_uuid, new_limit)
+    if not ok:
+        return await callback.answer("❌ Ошибка при обновлении лимита. Напишите в поддержку.", show_alert=True)
+
+    await mark_payment_completed(payment_id)
+    logger.info(f"[HWID slot] User {user_id}: limit {current_limit} → {new_limit}")
+
+    # Уведомляем админа
+    try:
+        await bot.send_message(
+            ADMIN_ID,
+            f"📱 <b>+1 слот HWID</b>\nUser: {user_id} | {provider}\nЛимит: {current_limit} → {new_limit}",
+            parse_mode="HTML"
+        )
+    except Exception: pass
+
+    await callback.message.edit_text(
+        f"✅ <b>Оплачено! Слот добавлен.</b>\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n"
+        f"🔐 <b>Новый лимит:</b> {new_limit} устройства\n"
+        f"Подключите новое устройство — оно автоматически зарегистрируется.",
+        parse_mode="HTML"
+    )
+
+
+@router.callback_query(F.data.startswith("check_hwid_slot_yookassa:"))
+async def check_hwid_slot_yookassa(callback: CallbackQuery, bot: Bot):
+    payment_id = callback.data.split(":", 1)[1]
+    await activate_hwid_slot(callback, bot, "hwid_slot_yookassa", payment_id)
+
+
+@router.callback_query(F.data.startswith("check_hwid_slot_crypto:"))
+async def check_hwid_slot_crypto(callback: CallbackQuery, bot: Bot):
+    invoice_id = int(callback.data.split(":", 1)[1])
+    await activate_hwid_slot(callback, bot, "hwid_slot_crypto", invoice_id)
 
 @router.callback_query(F.data == "info_get_link")
 async def info_get_link_handler(callback: CallbackQuery):
