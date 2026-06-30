@@ -594,12 +594,23 @@ async def execute_broadcast(callback: CallbackQuery, state: FSMContext, bot: Bot
     await state.clear()
     await callback.message.edit_text("🚀 <b>Рассылка запущена...</b>")
     users = await get_users_for_broadcast(target_type)
+    success_count = 0
+    fail_count = 0
     for user in users:
         try:
             await bot.copy_message(chat_id=user['id'], from_chat_id=from_chat_id, message_id=message_id)
+            success_count += 1
             await asyncio.sleep(0.05)
-        except: pass
-    await callback.message.answer("✅ <b>Рассылка завершена!</b>", parse_mode="HTML")
+        except: 
+            fail_count += 1
+            
+    await callback.message.answer(
+        f"✅ <b>Рассылка завершена!</b>\n\n"
+        f"📈 <b>Статистика:</b>\n"
+        f"Успешно: {success_count} чел.\n"
+        f"Ошибка (заблокировали бота): {fail_count} чел.", 
+        parse_mode="HTML"
+    )
 
 # --- ОБРАБОТЧИКИ ПОЛЬЗОВАТЕЛЕЙ ---
 
