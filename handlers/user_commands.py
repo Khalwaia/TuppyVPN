@@ -1268,8 +1268,7 @@ async def get_full_user_info(user_uuid: str):
 @router.callback_query(F.data == "info_devices")
 async def info_devices_handler(callback: CallbackQuery):
     user_id = callback.from_user.id
-    
-    # 1. Получаем полные данные юзера (для лимита и UUID)
+
     client_full = await get_client_by_tgid(user_id)
     if not client_full:
         return await callback.answer("❌ Ошибка получения данных")
@@ -1277,39 +1276,144 @@ async def info_devices_handler(callback: CallbackQuery):
     user_uuid = client_full.get('uuid')
     limit = client_full.get('hwidDeviceLimit', 5)
 
-    # 2. Получаем список устройств через новый эндпоинт
     devices = await get_user_hwid_devices(user_uuid)
     active_count = len(devices)
-    
+
     device_list_text = ""
-    for i in range(limit):
-        if i < active_count:
-            device = devices[i]
-            hwid_val = device.get('hwid', 'Unknown')
-            # Выводим модель, платформу или User-Agent, если они есть
-            model = device.get('deviceModel') or device.get('platform') or device.get('userAgent') or "Устройство"
-            
-            # Сокращаем длинный HWID для красоты
-            short_name = f"{hwid_val[:8]}...{hwid_val[-4:]}" if len(hwid_val) > 12 else hwid_val
-            device_list_text += f"{i+1}. 🟢 <b>{model}</b> (<code>{short_name}</code>)\n"
-        else:
-            device_list_text += f"{i+1}. ⚪️ <i>Свободный слот</i>\n"
+    kb = []
+
+    for i, device in enumerate(devices):
+        hwid_val = device.get('hwid', 'Unknown')
+        model = (
+            device.get('deviceModel')
+            or device.get('platform')
+            or device.get('userAgent')
+            or f"Устройство {i+1}"
+        )
+        # Обрезаем длинное название модели для кнопки
+        btn_label = model[:28] + "..." if len(model) > 28 else model
+        short_hwid = f"{hwid_val[:6]}…{hwid_val[-4:]}" if len(hwid_val) > 10 else hwid_val
+
+        device_list_text += f"{i+1}. 🟢 <b>{model}</b> (<code>{short_hwid}</code>)\n"
+        # Каждое устройство — отдельная кнопка, ведущая на его страницу
+        kb.append([InlineKeyboardButton(
+            text=f"📱 {btn_label}",
+            callback_data=f"device_info:{hwid_val}"
+        )])
+
+    # Свободные слоты — только в тексте, не кнопки
+    for j in range(active_count, limit):
+        device_list_text += f"{j+1}. ⚪️ <i>Свободный слот</i>\n"
 
     text = (
         f"📱 <b>Ваши устройства</b>\n"
         f"➖➖➖➖➖➖➖➖➖➖\n"
         f"🔐 <b>Лимит HWID:</b> {active_count}/{limit}\n\n"
-        f"<b>Статус слотов:</b>\n{device_list_text}\n"
+        f"<b>Нажмите на устройство для управления:</b>\n"
+        f"{device_list_text}\n"
         f"➖➖➖➖➖➖➖➖➖➖"
     )
-    
-    kb = []
-    # Показываем кнопку сброса только если есть привязанные устройства
+
     if active_count > 0:
-        kb.append([InlineKeyboardButton(text="🗑 Сбросить все устройства", callback_data="device_reset_all")])
+        kb.append([InlineKeyboardButton(text="🗑 Сбросить все", callback_data="device_reset_all")])
     kb.append([InlineKeyboardButton(text="🔙 Назад", callback_data="back_to_info")])
-    
-    await callback.message.edit_text(text, reply_markup=InlineKeyboardMarkup(inline_keyboard=kb), parse_mode="HTML")
+
+    await callback.message.edit_text(
+        text,
+        reply_markup=InlineKeyboardMarkup(inline_keyboard=kb),
+        parse_mode="HTML"
+    )
+
+@router.callback_query(F.data.startswith("device_info:"))
+async def device_info_handler(callback: CallbackQuery):
+    """Показывает информацию о конкретном устройстве и кнопку удаления."""
+    user_id = callback.from_user.id
+    hwid_val = callback.data.split(":", 1)[1]
+
+    client_full = await get_client_by_tgid(user_id)
+    if not client_full:
+        return await callback.answer("❌ Ошибка получения данных")
+
+    user_uuid = client_full.get('uuid')
+    devices = await get_user_hwid_devices(user_uuid)
+
+    # Ищем нужное устройство по HWID
+    device = next((d for d in devices if d.get('hwid') == hwid_val), None)
+    if not device:
+        await callback.answer("❌ Устройство не найдено (уже удалено?)", show_alert=True)
+        return await info_devices_handler(callback)
+
+    model = (
+        device.get('deviceModel')
+        or device.get('platform')
+        or device.get('userAgent')
+        or "Неизвестное устройство"
+    )
+    platform = device.get('platform') or "—"
+    first_seen = device.get('createdAt') or device.get('firstConnectedAt') or "—"
+    last_seen = device.get('updatedAt') or device.get('lastConnectedAt') or "—"
+
+    # Форматируем даты если есть
+    def fmt_date(s):
+        try:
+            dt = datetime.datetime.fromisoformat(s.replace('Z', '+00:00'))
+            return dt.strftime('%d.%m.%Y %H:%M')
+        except Exception:
+            return s
+
+    text = (
+        f"📱 <b>Устройство</b>\n"
+        f"➖➖➖➖➖➖➖➖➖➖\n"
+        f"🖥 <b>Модель:</b> {model}\n"
+        f"💻 <b>Платформа:</b> {platform}\n"
+        f"🔑 <b>HWID:</b> <code>{hwid_val}</code>\n"
+        f"📅 <b>Добавлено:</b> {fmt_date(first_seen)}\n"
+        f"🕐 <b>Последняя активность:</b> {fmt_date(last_seen)}\n"
+        f"➖➖➖➖➖➖➖➖➖➖"
+    )
+
+    kb = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🗑 Удалить это устройство",
+            callback_data=f"device_delete:{hwid_val}"
+        )],
+        [InlineKeyboardButton(text="🔙 Назад к устройствам", callback_data="info_devices")]
+    ])
+
+    await callback.message.edit_text(text, reply_markup=kb, parse_mode="HTML")
+
+@router.callback_query(F.data.startswith("device_delete:"))
+async def device_delete_handler(callback: CallbackQuery):
+    """Удаляет одно конкретное устройство по HWID."""
+    user_id = callback.from_user.id
+    hwid_val = callback.data.split(":", 1)[1]
+
+    client = await get_client_by_tgid(user_id)
+    if not client or 'uuid' not in client:
+        return await callback.answer("❌ Пользователь не найден", show_alert=True)
+
+    user_uuid = client['uuid']
+    headers = get_auth_headers()
+    url = f"{REMNAWAVE_Url}/api/hwid/devices/delete-one"
+    payload = {"userUuid": user_uuid, "hwid": hwid_val}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=payload, headers=headers) as resp:
+                if resp.status in [200, 201, 204]:
+                    logger.info(f"[HWID] Deleted device hwid={hwid_val[:8]}... for user {user_id}")
+                    await callback.answer("✅ Устройство удалено!", show_alert=True)
+                    await info_devices_handler(callback)
+                else:
+                    error_data = await resp.text()
+                    logger.warning(f"[HWID] Delete failed {resp.status}: {error_data}")
+                    await callback.answer(
+                        f"❌ Не удалось удалить (код {resp.status})", show_alert=True
+                    )
+    except Exception as e:
+        logger.exception(f"[HWID] Exception on delete device for user {user_id}: {e}")
+        await callback.answer("❌ Техническая ошибка при удалении", show_alert=True)
+
 
 @router.callback_query(F.data == "device_reset_all")
 async def device_reset_all_handler(callback: CallbackQuery):
